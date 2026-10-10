@@ -656,20 +656,20 @@ window.__CONFUSE = [["affect","effect","affect 是动词'影响'；effect 通常
   }
   function dueCount() { return Math.min(dueAllCount(), revCap()); }   /* 今天实际要练的（封顶） */
   function counts() {
-    var o = { new: 0, learn: 0, done: 0 };
+    var o = { new: 0, learn: 0, done: 0, base: 0 };
     pool().forEach(function (x) {
-      var c = S.cards[x.w], st = c ? (c.st || 0) : 0;
-      if (skipped(x.w)) { o.done++; return; }   /* 免背基础词计入已掌握 */
+      var c = S.cards[x.w], st = c ? (c.st || 0) : 0, sk = skipped(x.w);
       if (st >= 4) o.done++;               /* 保活词计入已掌握，但每月仍回来抽查 */
       else if (c && c.iv >= 21) o.done++;  /* 间隔拉满的毕业词 */
-      else if (!c || st === 0) o.new++;
+      else if (!c || st === 0) o.new++;    /* 没学过的都算未学，免背词也算（只是不进队列） */
       else o.learn++;
+      if (sk) o.base++;
     });
     return o;
   }
   /* 按当前速度学完这一档还需多少天 */
   function forecast() {
-    var c = counts(), left = c.new + c.learn, pd = perDay();
+    var c = counts(), left = c.new + c.learn - c.base, pd = perDay();   /* 免背词不算在"还要学"里 */
     var days = left > 0 ? Math.ceil(left / Math.max(1, pd)) : 0;
     var eta = new Date(Date.now() + days * 86400000);
     return { left: left, days: days, eta: (eta.getMonth() + 1) + ' 月 ' + eta.getDate() + ' 日' };
@@ -705,8 +705,8 @@ window.__CONFUSE = [["affect","effect","affect 是动词'影响'；effect 通常
   function renderHome() {
     var due = dueCount(), dueAll = dueAllCount(), c = counts(), st = streak();
     var bk = (S.set && S.set.bank) || 'cet6', fr = (S.set && S.set.fr) || 4;
-    var newToday = Math.max(0, Math.min(perDay() - newDone(), c.new));
-    var total = c.new + c.learn + c.done;
+    var newToday = Math.max(0, Math.min(perDay() - newDone(), c.new - c.base));  /* 可排队的未学词要剔除免背词 */
+    var total = c.new + c.learn + c.done;   /* base 是其中免背的子集，只作标注，不能加进总数（会重复计数） */
     var mins = Math.max(1, Math.round((due + newToday) * 9 / 60));
     $('dayPill').innerHTML = '连续 <b>' + st + '</b> 天';
     if ($('topSub')) $('topSub').textContent = bankName(bk) + ' · ' + freqName(fr) + '　共 ' + pool().length + ' 词';
@@ -727,8 +727,8 @@ window.__CONFUSE = [["affect","effect","affect 是动词'影响'；effect 通常
         return '<button data-fr="' + f.k + '" class="' + (f.k === fr ? 'on' : '') + '">' + f.n + '<small>' + sizeOf(bk, f.k) + '</small></button>';
       }).join('') + '</div>' +
       '<div class="pmeta">' + bankName(bk) + ' · ' + freqName(fr) + '　共 <b>' + total + '</b> 词' +
-      (total ? '　已掌握 ' + c.done + ' · 学习中 ' + c.learn + ' · 未学 ' + c.new : '') + '</div>' +
-      '<div class="pnote">四级词全部在六级里，六级和考研互有独有词，以切换后的总量为准；' + Object.keys(SKIP).length + ' 个基础简单词已免背（计入已掌握，可在词本「基础词」里恢复）；毕业词不再出现，保活词每月抽查一次</div>' +
+      (total ? '　已掌握 ' + c.done + ' · 学习中 ' + c.learn + ' · 未学 ' + c.new + (c.base ? ' · 基础词免背 ' + c.base : '') : '') + '</div>' +
+      '<div class="pnote">四级词全部在六级里，六级和考研互有独有词，以切换后的总量为准；' + Object.keys(SKIP).length + ' 个基础简单词已免背（不占进度，可在词本「基础词」里恢复）；毕业词不再出现，保活词每月抽查一次</div>' +
       '</div>' +
 
       '<div class="hero">' +
@@ -738,12 +738,14 @@ window.__CONFUSE = [["affect","effect","affect 是动词'影响'；effect 通常
       (dueAll > due ? '<small style="color:var(--faint);font-weight:400"> 另' + (dueAll - due) + '顺延</small>' : '') + '</button>' +
       '<button class="btn ghost" id="newOnly" style="width:auto;padding:9px 18px;margin:0">新词 <b>' + newToday + '</b></button></div>' +
       '<div class="lbl">今日待练　约 ' + mins + ' 分钟</div>' +
-      '<div style="margin-top:12px" class="bar"><i style="width:' + (total ? (c.done / total * 100) : 0) + '%"></i></div>' +
+      '<div style="margin-top:12px" class="bar"><i style="width:' + ((total - c.base) > 0 ? (c.done / (total - c.base) * 100) : 0) + '%"></i></div>' +
       '<div class="ring-row">' +
       '<div><div class="v">' + c.done + '</div><div class="k">已掌握</div></div>' +
       '<div><div class="v">' + c.learn + '</div><div class="k">学习中</div></div>' +
       '<div><div class="v">' + c.new + '</div><div class="k">未学</div></div>' +
-      '</div></div>' +
+      '</div>' +
+      (c.base ? '<div style="font-size:12px;color:var(--faint);margin-top:8px">其中 ' + c.base + ' 个基础简单词免背，自动跳过不进队列</div>' : '') +
+      '</div>' +
 
       '<div style="margin:10px 12px"><button class="btn pri" id="startBtn">' +
       (due + newToday > 0 ? '开始今天的背诵' : '今天没有待练，去换一档') + '</button></div>' +
@@ -1253,9 +1255,9 @@ window.__CONFUSE = [["affect","effect","affect 是动词'影响'；effect 通常
     var kwl = kw.toLowerCase(), wordM = [], meanM = [];
     function passFilt(x) {
       if (filt === 'base') return skipped(x.w);
-      if (filt === 'new') return stageOf(x.w) === 0 && !skipped(x.w);
-      if (filt === 'learn') return stageOf(x.w) > 0 && !graduated(x.w);
-      if (filt === 'done') return graduated(x.w) || skipped(x.w);
+      if (filt === 'new') return stageOf(x.w) === 0;
+      if (filt === 'learn') return stageOf(x.w) > 0 && !graduated(x.w) && !skipped(x.w);
+      if (filt === 'done') return graduated(x.w);
       return true;
     }
     pool().forEach(function (x) {
